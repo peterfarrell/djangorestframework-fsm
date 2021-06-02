@@ -75,7 +75,7 @@ def get_drf_fsm_mixin(Model, fieldname='state'):
 
     class Mixin(object):
         save_after_transition = True
-        save_after_transition_db_transaction = False
+        save_after_transition_db_transaction = True
 
         @action(methods=['GET'], detail=True, url_name='possible-transitions', url_path='possible-transitions')
         def possible_transitions(self, request, *args, **kwargs):
