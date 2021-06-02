@@ -1,6 +1,8 @@
 import inspect
+from contextlib import contextmanager
 
 from django_fsm import can_proceed, has_transition_perm
+from django.db import transaction, DEFAULT_DB_ALIAS
 from django.utils.translation import gettext_lazy as _
 
 from rest_framework import exceptions
@@ -29,10 +31,8 @@ def get_transition_viewset_method(transition_name):
         if 'by' in inspect.signature(transition_method).parameters.keys() and 'by' not in transition_kwargs:
             transition_kwargs['by'] = self.request.user
 
-        transition_method(**transition_kwargs)
-
-        if self.save_after_transition:
-            instance.save()
+        with self._transition_action_context(instance)
+            transition_method(**transition_kwargs)
 
         if getattr(instance, '_prefetched_objects_cache', None):
             # If 'prefetch_related' has been applied to a queryset, we need to
@@ -41,6 +41,22 @@ def get_transition_viewset_method(transition_name):
 
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
+    
+    @contextmanager
+    def _transition_action_context(self, instance):
+        """
+        Returns the context for :meth:`_transition_action`
+        :return:
+        """
+        if self.save_after_transition and self.save_after_transition_db_transaction:
+            with transaction.atomic():
+                yield
+                instance.save()
+        else:
+            yield
+            
+            if self.save_after_transition:
+                instance.save()
 
     transition_action.__name__ = transition_name
     try:
@@ -59,6 +75,7 @@ def get_drf_fsm_mixin(Model, fieldname='state'):
 
     class Mixin(object):
         save_after_transition = True
+        save_after_transition_db_transaction = False
 
         @action(methods=['GET'], detail=True, url_name='possible-transitions', url_path='possible-transitions')
         def possible_transitions(self, request, *args, **kwargs):
